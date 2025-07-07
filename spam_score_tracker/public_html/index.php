@@ -163,6 +163,10 @@ if (!empty($scores)) {
             opacity: 0.8;
         }
         .na:hover { text-decoration: underline; cursor: help; }
+        .score-low { color: #2e7d32; }
+        .score-medium { color: #ff9800; }
+        .score-high { color: #c62828; font-weight: bold; }
+        td.spamlog { max-width: 400px; word-break: break-all; }
         .alert {
             background: #fff3cd;
             color: #856404;
@@ -190,11 +194,29 @@ if (!empty($scores)) {
             <td><?php echo htmlspecialchars($s['from'] ?? ''); ?></td>
             <td><?php echo htmlspecialchars(isset($s['to']) ? implode(',', $s['to']) : ''); ?></td>
             <td><?php echo htmlspecialchars($s['ip'] ?? ''); ?></td>
-            <td><?php echo isset($s['score']) ? htmlspecialchars($s['score']) : '<span class="na" title="No score logged">No score</span>'; ?></td>
+            <td>
+            <?php if (isset($s['score'])): 
+                $sc = $s['score'];
+                $cls = 'score-low';
+                if ($sc >= 5) { $cls = 'score-high'; }
+                elseif ($sc >= 1) { $cls = 'score-medium'; }
+            ?>
+                <span class="<?php echo $cls; ?>"><?php echo htmlspecialchars($sc); ?></span>
+            <?php else: ?>
+                <span class="na" title="No score logged">No score</span>
+            <?php endif; ?>
+            </td>
             <td><?php echo htmlspecialchars($s['subject'] ?? ''); ?></td>
             <td><?php echo htmlspecialchars($s['msgid'] ?? ''); ?></td>
             <td><?php echo htmlspecialchars($s['size'] ?? ''); ?></td>
-            <td><?php echo htmlspecialchars($s['spamline'] ?? ''); ?></td>
+            <td class="spamlog">
+            <?php if (!empty($s['spamline'])):
+                $full = $s['spamline'];
+                $short = strlen($full) > 80 ? substr($full, 0, 77) . '...' : $full;
+            ?>
+                <span title="<?php echo htmlspecialchars($full); ?>"><?php echo htmlspecialchars($short); ?></span>
+            <?php endif; ?>
+            </td>
             <td><?php echo htmlspecialchars($s['action'] ?? ''); ?></td>
         </tr>
     <?php endforeach; ?>
