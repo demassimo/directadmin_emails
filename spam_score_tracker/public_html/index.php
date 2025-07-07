@@ -24,6 +24,7 @@ function parse_log($file) {
     $fh = fopen($file, 'r');
     if (!$fh) return [];
     $msg = [];
+    $midMap = [];
     while (($line = fgets($fh)) !== false) {
         // message received line
         if (preg_match('/^(\S+\s+\S+)\s+(\S+)\s+<=\s+(\S+).*\[(\d+\.\d+\.\d+\.\d+)\]/', $line, $m)) {
@@ -36,6 +37,7 @@ function parse_log($file) {
             }
             if (preg_match('/id=([^\s]+)/', $line, $mi)) {
                 $msg[$id]['msgid'] = $mi[1];
+                $midMap[$mi[1]] = $id;
             }
             if (preg_match('/S=(\d+)/', $line, $msz)) {
                 $msg[$id]['size'] = $msz[1];
@@ -60,7 +62,7 @@ function parse_log($file) {
             $msg[$id]['action'] = 'rejected';
         }
 
-        // spam score line
+        // spam score line - common Exim "spamcheck" format
         // Match variations like "spamcheck:" or "spamcheck result:" so the
         // score is captured even if the wording differs between servers.
         if (preg_match('/^(\S+\s+\S+)\s+(\S+)\s+.*score=([\d\.\-]+)/i', $line, $m)) {
@@ -69,6 +71,17 @@ function parse_log($file) {
             $msg[$id]['score'] = floatval($m[3]);
             $msg[$id]['spamline'] = trim($line);
         }
+
+        // spamd result lines without Exim ID, match via the Message-ID
+        if (preg_match('/^(\S+\s+\S+).*spamd: result:.*?\s(-?[\d\.]+)\s-.*mid=<([^>]+)>/i', $line, $m)) {
+            $mid = $m[3];
+            if (isset($midMap[$mid])) {
+                $id = $midMap[$mid];
+                $msg[$id]['time'] = $msg[$id]['time'] ?? $m[1];
+                $msg[$id]['score'] = floatval($m[2]);
+                $msg[$id]['spamline'] = trim($line);
+            }
+        }
     }
     fclose($fh);
     return $msg;
@@ -76,6 +89,14 @@ function parse_log($file) {
 
 
 $scores = parse_log($logFile);
+
+$allMissingScores = true;
+foreach ($scores as $info) {
+    if (isset($info['score'])) {
+        $allMissingScores = false;
+        break;
+    }
+}
 
 // Determine action for each message based on log lines
 foreach ($scores as $id => $info) {
@@ -136,14 +157,32 @@ if (!empty($scores)) {
         th { background: #f7f7f7; }
         tr:nth-child(even) { background: #fafafa; }
         tr:hover { background: #f0f0f0; }
+        .na {
+            color: #777;
+            font-style: italic;
+            opacity: 0.8;
+        }
+        .na:hover { text-decoration: underline; cursor: help; }
+        .alert {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeeba;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+        }
     </style>
 </head>
 <body>
 <div class="panel">
 <h1>SpamAssassin Score History</h1>
+<?php if ($allMissingScores): ?>
+<div class="alert">No spam scores were parsed from the log file. SpamAssassin may not be logging results.</div>
+<?php endif; ?>
+<p>Rows showing <span class="na" title="No score logged">No score</span> had no SpamAssassin result in the log.</p>
 
 <table class="table table-striped table-bordered">
-    <tr><th>Date</th><th>ID</th><th>From</th><th>To</th><th>IP</th><th>Score</th><th>Subject</th><th>Message ID</th><th>Size</th><th>Action</th></tr>
+    <tr><th>Date</th><th>ID</th><th>From</th><th>To</th><th>IP</th><th>Score</th><th>Subject</th><th>Message ID</th><th>Size</th><th>Spam Log</th><th>Action</th></tr>
     <?php foreach ($scores as $id => $s): ?>
         <tr>
             <td><?php echo htmlspecialchars($s['time'] ?? ''); ?></td>
@@ -151,10 +190,11 @@ if (!empty($scores)) {
             <td><?php echo htmlspecialchars($s['from'] ?? ''); ?></td>
             <td><?php echo htmlspecialchars(isset($s['to']) ? implode(',', $s['to']) : ''); ?></td>
             <td><?php echo htmlspecialchars($s['ip'] ?? ''); ?></td>
-            <td><?php echo htmlspecialchars(isset($s['score']) ? $s['score'] : 'N/A'); ?></td>
+            <td><?php echo isset($s['score']) ? htmlspecialchars($s['score']) : '<span class="na" title="No score logged">No score</span>'; ?></td>
             <td><?php echo htmlspecialchars($s['subject'] ?? ''); ?></td>
             <td><?php echo htmlspecialchars($s['msgid'] ?? ''); ?></td>
             <td><?php echo htmlspecialchars($s['size'] ?? ''); ?></td>
+            <td><?php echo htmlspecialchars($s['spamline'] ?? ''); ?></td>
             <td><?php echo htmlspecialchars($s['action'] ?? ''); ?></td>
         </tr>
     <?php endforeach; ?>
