@@ -1,6 +1,7 @@
 #!/bin/sh
 # Install script for SpamScoreTracker
-PLUGIN_DIR=$(dirname "$0")
+SCRIPT_DIR=$(dirname "$0")
+PLUGIN_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
 
 # Ensure log directory exists
 mkdir -p "$PLUGIN_DIR/logs"
