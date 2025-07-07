@@ -13,7 +13,7 @@ This plugin provides a simple interface for DirectAdmin administrators to review
 
 To remove the plugin cleanly, run `./scripts/uninstall.sh` from the plugin directory before deleting it.
 
-The plugin parses `/var/log/exim/mainlog`. Adjust the path in `public_html/index.php` if your Exim log is located elsewhere. Parsed results are written to `logs/scores.log` inside the plugin directory for later review. Each line of the CSV file includes the date, message ID, sender, recipients, IP, score, subject, message ID, size, the raw SpamAssassin line, and whether the message was delivered or rejected.
+By default the plugin reads `/var/log/exim/mainlog` and `/var/log/mail.log`.  Edit the `$logFiles` array in `public_html/index.php` if your logs are stored in different locations. Parsed results are written to `logs/scores.log` inside the plugin directory for later review. Each line of the CSV file includes the date, message ID, sender, recipients, IP, score, the triggered SpamAssassin tests, subject, message ID, size, the raw SpamAssassin line, and whether the message was delivered or rejected. The parser cross-references SpamAssassin logs with Exim entries by the email's Message-ID so that scores from `spamd` lines are matched to the correct delivery record.
 
 ### Packaging
 

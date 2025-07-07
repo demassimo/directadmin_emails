@@ -13,19 +13,27 @@ if ($user === '' || !in_array($user, $allowedAdmins, true)) {
     exit;
 }
 
-// Path to Exim main log (adjust if necessary)
-$logFile = '/var/log/exim/mainlog';
+// Paths to log files containing Exim and SpamAssassin output. Add more
+// files to this array if your system logs to multiple locations.
+$logFiles = ['/var/log/exim/mainlog', '/var/log/mail.log'];
 
 // Where to store parsed data
 $logOutput = __DIR__ . '/../logs/scores.log';
 
-function parse_log($file) {
-    if (!file_exists($file)) return [];
-    $fh = fopen($file, 'r');
-    if (!$fh) return [];
+/**
+ * Parse one or more log files and return an array of message data.
+ * @param string|array $files Path or array of paths to log files
+ */
+function parse_log($files) {
+    $files = (array)$files;
     $msg = [];
     $midMap = [];
-    while (($line = fgets($fh)) !== false) {
+
+    foreach ($files as $file) {
+        if (!file_exists($file)) continue;
+        $fh = fopen($file, 'r');
+        if (!$fh) continue;
+        while (($line = fgets($fh)) !== false) {
         // message received line
         if (preg_match('/^(\S+\s+\S+)\s+(\S+)\s+<=\s+(\S+).*\[(\d+\.\d+\.\d+\.\d+)\]/', $line, $m)) {
             $id = $m[2];
@@ -62,33 +70,37 @@ function parse_log($file) {
             $msg[$id]['action'] = 'rejected';
         }
 
-        // spam score line - common Exim "spamcheck" format
-        // Match variations like "spamcheck:" or "spamcheck result:" so the
-        // score is captured even if the wording differs between servers.
-        if (preg_match('/^(\S+\s+\S+)\s+(\S+)\s+.*score=([\d\.\-]+)/i', $line, $m)) {
+        // spam score line - Exim "spamcheck" format
+        // Require the literal text "spamcheck" to avoid matching plain spamd logs
+        if (preg_match('/^(\S+\s+\S+)\s+(\S+)\s+.*spamcheck.*score=([\d\.\-]+)(?:.*tests=([A-Za-z0-9_,-]+))?/i', $line, $m)) {
             $id = $m[2];
             $msg[$id]['time'] = $msg[$id]['time'] ?? $m[1];
             $msg[$id]['score'] = floatval($m[3]);
+            if (!empty($m[4])) {
+                $msg[$id]['tests'] = $m[4];
+            }
             $msg[$id]['spamline'] = trim($line);
         }
 
         // spamd result lines without Exim ID, match via the Message-ID
-        if (preg_match('/^(\S+\s+\S+).*spamd: result:.*?\s(-?[\d\.]+)\s-.*mid=<([^>]+)>/i', $line, $m)) {
-            $mid = $m[3];
+        if (preg_match('/^(\w{3}\s+\d+\s+\d+:\d+:\d+).*spamd: result:.*?\s(-?[\d\.]+)\s-\s*([A-Za-z0-9_,-]+).*mid=<([^>]+)>/i', $line, $m)) {
+            $mid = $m[4];
             if (isset($midMap[$mid])) {
                 $id = $midMap[$mid];
                 $msg[$id]['time'] = $msg[$id]['time'] ?? $m[1];
                 $msg[$id]['score'] = floatval($m[2]);
+                $msg[$id]['tests'] = $m[3];
                 $msg[$id]['spamline'] = trim($line);
             }
         }
+        }
+        fclose($fh);
     }
-    fclose($fh);
     return $msg;
 }
 
 
-$scores = parse_log($logFile);
+$scores = parse_log($logFiles);
 
 $allMissingScores = true;
 foreach ($scores as $info) {
@@ -119,6 +131,7 @@ if (!empty($scores)) {
                 $to,
                 $info['ip'] ?? '',
                 $info['score'] ?? '',
+                $info['tests'] ?? '',
                 $info['subject'] ?? '',
                 $info['msgid'] ?? '',
                 $info['size'] ?? '',
@@ -182,7 +195,7 @@ if (!empty($scores)) {
 <p>Rows showing <span class="na" title="No score logged">No score</span> had no SpamAssassin result in the log.</p>
 
 <table class="table table-striped table-bordered">
-    <tr><th>Date</th><th>ID</th><th>From</th><th>To</th><th>IP</th><th>Score</th><th>Subject</th><th>Message ID</th><th>Size</th><th>Spam Log</th><th>Action</th></tr>
+    <tr><th>Date</th><th>ID</th><th>From</th><th>To</th><th>IP</th><th>Score</th><th>Tests</th><th>Subject</th><th>Message ID</th><th>Size</th><th>Spam Log</th><th>Action</th></tr>
     <?php foreach ($scores as $id => $s): ?>
         <tr>
             <td><?php echo htmlspecialchars($s['time'] ?? ''); ?></td>
@@ -191,6 +204,7 @@ if (!empty($scores)) {
             <td><?php echo htmlspecialchars(isset($s['to']) ? implode(',', $s['to']) : ''); ?></td>
             <td><?php echo htmlspecialchars($s['ip'] ?? ''); ?></td>
             <td><?php echo isset($s['score']) ? htmlspecialchars($s['score']) : '<span class="na" title="No score logged">No score</span>'; ?></td>
+            <td><?php echo htmlspecialchars($s['tests'] ?? ''); ?></td>
             <td><?php echo htmlspecialchars($s['subject'] ?? ''); ?></td>
             <td><?php echo htmlspecialchars($s['msgid'] ?? ''); ?></td>
             <td><?php echo htmlspecialchars($s['size'] ?? ''); ?></td>
