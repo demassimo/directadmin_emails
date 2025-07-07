@@ -1,7 +1,11 @@
 <?php
 // SpamScoreTracker admin page
 // Only accessible to an administrator
-$user = $_SERVER['REMOTE_USER'] ?? '';
+$user = $_SERVER['REMOTE_USER']
+    ?? $_SERVER['username']
+    ?? $_SERVER['USER']
+    ?? $_SERVER['user']
+    ?? '';
 $allowedAdmins = ['admin', 'diradmin'];
 if ($user === '' || !in_array($user, $allowedAdmins, true)) {
     header('HTTP/1.1 403 Forbidden');
