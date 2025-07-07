@@ -28,6 +28,8 @@ function parse_log($files) {
     $files = (array)$files;
     $msg = [];
     $midMap = [];
+    $currentId = null;
+    $pendingSpamd = [];
 
     foreach ($files as $file) {
         if (!file_exists($file)) continue;
@@ -35,8 +37,9 @@ function parse_log($files) {
         if (!$fh) continue;
         while (($line = fgets($fh)) !== false) {
         // message received line
-        if (preg_match('/^(\S+\s+\S+)\s+(\S+)\s+<=\s+(\S+).*\[(\d+\.\d+\.\d+\.\d+)\]/', $line, $m)) {
+        if (preg_match('/^(\S+\s+\S+)\s+(\S+)\s+<=\s+(\S+).*\[([^\]]+)\]/', $line, $m)) {
             $id = $m[2];
+            $currentId = $id;
             $msg[$id]['time'] = $m[1];
             $msg[$id]['from'] = $m[3];
             $msg[$id]['ip'] = $m[4];
@@ -46,6 +49,15 @@ function parse_log($files) {
             if (preg_match('/id=([^\s]+)/', $line, $mi)) {
                 $msg[$id]['msgid'] = $mi[1];
                 $midMap[$mi[1]] = $id;
+                if (isset($pendingSpamd[$mi[1]])) {
+                    foreach ($pendingSpamd[$mi[1]] as $sa) {
+                        $msg[$id]['time'] = $msg[$id]['time'] ?? $sa['time'];
+                        $msg[$id]['score'] = floatval($sa['score']);
+                        $msg[$id]['tests'] = $sa['tests'];
+                        $msg[$id]['spamline'] = $sa['line'];
+                    }
+                    unset($pendingSpamd[$mi[1]]);
+                }
             }
             if (preg_match('/S=(\d+)/', $line, $msz)) {
                 $msg[$id]['size'] = $msz[1];
@@ -55,18 +67,21 @@ function parse_log($files) {
         // delivery lines
         if (preg_match('/^(\S+\s+\S+)\s+(\S+)\s+=>\s+(\S+)/', $line, $m)) {
             $id = $m[2];
+            $currentId = $id;
             $msg[$id]['to'][] = $m[3];
         }
 
         // completed delivery line
         if (preg_match('/^(\S+\s+\S+)\s+(\S+)\s+Completed/', $line, $m)) {
             $id = $m[2];
+            $currentId = $id;
             $msg[$id]['action'] = $msg[$id]['action'] ?? 'delivered';
         }
 
         // rejection line
         if (preg_match('/^(\S+\s+\S+)\s+(\S+).*rejected/i', $line, $m)) {
             $id = $m[2];
+            $currentId = $id;
             $msg[$id]['action'] = 'rejected';
         }
 
@@ -74,6 +89,7 @@ function parse_log($files) {
         // Require the literal text "spamcheck" to avoid matching plain spamd logs
         if (preg_match('/^(\S+\s+\S+)\s+(\S+)\s+.*spamcheck.*score=([\d\.\-]+)(?:.*tests=([A-Za-z0-9_,-]+))?/i', $line, $m)) {
             $id = $m[2];
+            $currentId = $id;
             $msg[$id]['time'] = $msg[$id]['time'] ?? $m[1];
             $msg[$id]['score'] = floatval($m[3]);
             if (!empty($m[4])) {
@@ -91,7 +107,22 @@ function parse_log($files) {
                 $msg[$id]['score'] = floatval($m[2]);
                 $msg[$id]['tests'] = $m[3];
                 $msg[$id]['spamline'] = trim($line);
+            } elseif ($currentId) {
+                $id = $currentId;
+                $msg[$id]['time'] = $msg[$id]['time'] ?? $m[1];
+                $msg[$id]['score'] = floatval($m[2]);
+                $msg[$id]['tests'] = $m[3];
+                $msg[$id]['spamline'] = trim($line);
+            } else {
+                $pendingSpamd[$mid][] = ['time' => $m[1], 'score' => $m[2], 'tests' => $m[3], 'line' => trim($line)];
             }
+        } elseif (preg_match('/^(\w{3}\s+\d+\s+\d+:\d+:\d+).*spamd: result:.*?\s(-?[\d\.]+)\s-\s*([A-Za-z0-9_,-]+)/i', $line, $m) && $currentId) {
+            // spamd result line with no Message-ID, fall back to the last Exim ID
+            $id = $currentId;
+            $msg[$id]['time'] = $msg[$id]['time'] ?? $m[1];
+            $msg[$id]['score'] = floatval($m[2]);
+            $msg[$id]['tests'] = $m[3];
+            $msg[$id]['spamline'] = trim($line);
         }
         }
         fclose($fh);
