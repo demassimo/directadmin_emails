@@ -24,3 +24,15 @@ The repository does not include the plugin archive. To create `spam_score_tracke
 ```
 
 An optional `update_plugin.sh` script is provided to rebuild and install the plugin on a local DirectAdmin server in one step.
+
+## Troubleshooting
+
+If the panel shows "No spam scores were parsed" or entries with *No score*, the log files are missing SpamAssassin results. Check the following:
+
+1. Confirm that the paths listed in `$logFiles` inside `public_html/index.php` match your system's log locations.
+2. Ensure Exim is configured to log spam results. The `log_selector` option should include `+spam_score` and related settings so lines such as `spamcheck: score=` appear in the log.
+3. When relying on `spamd` logs, start `spamd` with the `-L` (`--log-id`) option so message IDs are recorded. Without this, the plugin cannot correlate scores to messages.
+4. Spamd result lines that appear before the matching Exim entry are cached using the Message-ID and applied once the delivery is seen.
+5. The parser will fall back to the last Exim ID when a SpamAssassin line lacks a `mid=<...>` tag, but concurrent deliveries can still lead to mismatches.
+
+After adjusting the configuration, reload the mail services and revisit the plugin page.
