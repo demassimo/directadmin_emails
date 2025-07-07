@@ -61,7 +61,9 @@ function parse_log($file) {
         }
 
         // spam score line
-        if (preg_match('/^(\S+\s+\S+)\s+(\S+)\s+spamcheck: score=([\d\.\-]+)/i', $line, $m)) {
+        // Match variations like "spamcheck:" or "spamcheck result:" so the
+        // score is captured even if the wording differs between servers.
+        if (preg_match('/^(\S+\s+\S+)\s+(\S+)\s+.*score=([\d\.\-]+)/i', $line, $m)) {
             $id = $m[2];
             $msg[$id]['time'] = $msg[$id]['time'] ?? $m[1];
             $msg[$id]['score'] = floatval($m[3]);
@@ -113,16 +115,34 @@ if (!empty($scores)) {
     <meta charset="utf-8" />
     <title>Spam Score Tracker</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
-        table { border-collapse: collapse; width: 100%; }
-        th, td { padding: 8px; border: 1px solid #ccc; }
-        th { background: #eee; }
+        /* Basic styling to mimic Evolution tables */
+        body { margin: 20px; font-family: Arial, sans-serif; background: #f5f5f5; }
+        .panel {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            border-radius: 6px;
+            overflow: hidden;
+        }
+        th, td { padding: 8px 10px; border: 1px solid #ddd; }
+        th { background: #f7f7f7; }
+        tr:nth-child(even) { background: #fafafa; }
+        tr:hover { background: #f0f0f0; }
     </style>
 </head>
 <body>
+<div class="panel">
 <h1>SpamAssassin Score History</h1>
 
-<table>
+<table class="table table-striped table-bordered">
     <tr><th>Date</th><th>ID</th><th>From</th><th>To</th><th>IP</th><th>Score</th><th>Subject</th><th>Message ID</th><th>Size</th><th>Action</th></tr>
     <?php foreach ($scores as $id => $s): ?>
         <tr>
@@ -131,7 +151,7 @@ if (!empty($scores)) {
             <td><?php echo htmlspecialchars($s['from'] ?? ''); ?></td>
             <td><?php echo htmlspecialchars(isset($s['to']) ? implode(',', $s['to']) : ''); ?></td>
             <td><?php echo htmlspecialchars($s['ip'] ?? ''); ?></td>
-            <td><?php echo htmlspecialchars($s['score'] ?? ''); ?></td>
+            <td><?php echo htmlspecialchars(isset($s['score']) ? $s['score'] : 'N/A'); ?></td>
             <td><?php echo htmlspecialchars($s['subject'] ?? ''); ?></td>
             <td><?php echo htmlspecialchars($s['msgid'] ?? ''); ?></td>
             <td><?php echo htmlspecialchars($s['size'] ?? ''); ?></td>
@@ -139,5 +159,6 @@ if (!empty($scores)) {
         </tr>
     <?php endforeach; ?>
 </table>
+</div>
 </body>
 </html>
