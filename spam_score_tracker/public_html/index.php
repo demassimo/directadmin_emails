@@ -16,8 +16,8 @@ $dsn = 'mysql:host=127.0.0.1;dbname=mail_logs;charset=utf8mb4';
 $dbu = 'mail_logs';
 $dbp = 'l59X8bHfO07FIBWY08Z98';
 
-$snippet = '';
-if (!empty($_GET['snippet_mid'])) {
+    $snippet = '';
+    if (!empty($_GET['snippet_mid'])) {
     $mid = preg_replace('/[^A-Za-z0-9._<>@-]/', '', $_GET['snippet_mid']);
     $escMid = escapeshellarg($mid);
     $grep = "grep -n $escMid /var/log/exim/mainlog* /var/log/mail.log* 2>/dev/null | head -1";
@@ -78,6 +78,7 @@ $allMissingScores = empty($scores);
         tr:nth-child(even) { background: #fafafa; }
         .alert { background: #fff3cd; color: #856404; border: 1px solid #ffeeba; padding: 10px; border-radius: 4px; margin-bottom: 10px; }
         .pagination a { margin: 0 3px; text-decoration: none; }
+        pre { background: #f0f0f0; padding: 10px; border-radius: 4px; }
     </style>
 </head>
 <body>
@@ -91,10 +92,13 @@ $allMissingScores = empty($scores);
         <?php endforeach; ?>
     </select>
 </form>
+<div id="snippet">
 <?php echo $snippet; ?>
+</div>
 <?php if ($allMissingScores): ?>
 <div class="alert">No spam scores were found in the database.</div>
 <?php endif; ?>
+<div id="results">
 <table class="table table-striped table-bordered">
     <tr><th>Date</th><th>From</th><th>To</th><th>Subject</th><th>Message ID</th><th>Score</th><th>Log</th></tr>
     <?php foreach ($scores as $s): ?>
@@ -105,7 +109,7 @@ $allMissingScores = empty($scores);
             <td><?php echo htmlspecialchars($s['subject'] ?? ''); ?></td>
             <td><?php echo htmlspecialchars($s['message_id'] ?? ''); ?></td>
             <td><?php echo htmlspecialchars($s['score']); ?></td>
-            <td><a href="?snippet_mid=<?php echo urlencode($s['message_id']); ?>&page=<?php echo $page; ?>&per_page=<?php echo $perPage; ?>">View</a></td>
+            <td><a href="?snippet_mid=<?php echo urlencode($s['message_id']); ?>&page=<?php echo $page; ?>&per_page=<?php echo $perPage; ?>#snippet">View</a></td>
         </tr>
     <?php endforeach; ?>
 </table>
@@ -115,12 +119,13 @@ $allMissingScores = empty($scores);
         <?php if ($i == $page): ?>
             <strong><?php echo $i; ?></strong>
         <?php else: ?>
-            <a href="?page=<?php echo $i; ?>&per_page=<?php echo $perPage; ?>"><?php echo $i; ?></a>
+            <a href="?page=<?php echo $i; ?>&per_page=<?php echo $perPage; ?>#results"><?php echo $i; ?></a>
         <?php endif; ?>
         <?php if ($i < $totalPages) echo ' '; ?>
     <?php endfor; ?>
 </div>
 <?php endif; ?>
+</div>
 </div>
 </body>
 </html>
