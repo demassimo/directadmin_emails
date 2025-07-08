@@ -7,7 +7,7 @@ This plugin provides a simple interface for DirectAdmin administrators to review
 ## Installation
 
 1. Copy the `spam_score_tracker` directory to `/usr/local/directadmin/plugins/`.
-2. Run the provided `scripts/install.sh` script from inside the directory. The script creates the log folder, installs Python and required modules, sets up the `mail_logs` database (user `mail_logs`, password `l59X8bHfO07FIBWY08Z98`), and installs a systemd unit to keep the database updated from the mail logs.
+2. Run the provided `scripts/install.sh` script from inside the directory. The script creates the log folder, installs Python and required modules, reads MySQL credentials from `/usr/local/directadmin/conf/mysql.conf` to set up the `mail_logs` database (user `mail_logs`, password `l59X8bHfO07FIBWY08Z98`), and installs a systemd unit to keep the database updated from the mail logs.
 3. Ensure the directory ownership is `diradmin:diradmin` if not already set.
 4. Log in to DirectAdmin as admin and navigate to *Plugins* to enable **SpamScoreTracker**.
 
@@ -15,7 +15,7 @@ To remove the plugin cleanly, run `./scripts/uninstall.sh` from the plugin direc
 
 The included Python script continuously tails `/var/log/exim/mainlog` and `/var/log/mail.log` and stores each message's score along with the sender, recipients and subject in a MySQL table. The PHP interface simply reads from this database, so no log parsing is done on each page load.
 
-The web interface lets you choose how many results to display per page and offers page numbers to navigate through the history.
+The web interface lets you choose how many results to display per page and offers page numbers to navigate through the history. Each entry includes a **View** link which shows 20 lines of log context around the spam-check entry for that message.
 
 ### Packaging
 

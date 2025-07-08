@@ -16,6 +16,29 @@ $dsn = 'mysql:host=127.0.0.1;dbname=mail_logs;charset=utf8mb4';
 $dbu = 'mail_logs';
 $dbp = 'l59X8bHfO07FIBWY08Z98';
 
+$snippet = '';
+if (!empty($_GET['snippet_mid'])) {
+    $mid = preg_replace('/[^A-Za-z0-9._<>@-]/', '', $_GET['snippet_mid']);
+    $escMid = escapeshellarg($mid);
+    $grep = "grep -n $escMid /var/log/exim/mainlog* /var/log/mail.log* 2>/dev/null | head -1";
+    $out = trim(shell_exec($grep));
+    if ($out !== '') {
+        list($file, $line) = explode(':', $out, 2);
+        $line = (int)$line;
+        $start = max(1, $line - 10);
+        $end = $line + 10;
+        if (substr($file, -3) === '.gz') {
+            $cmd = "zcat " . escapeshellarg($file) . " | sed -n '{$start},{$end}p'";
+        } else {
+            $cmd = "sed -n '{$start},{$end}p' " . escapeshellarg($file);
+        }
+        $snippet = htmlspecialchars(shell_exec($cmd));
+        $snippet = "<pre>" . $snippet . "</pre>";
+    } else {
+        $snippet = '<div class="alert">Log entry not found.</div>';
+    }
+}
+
 // pagination parameters
 $allowedPerPage = [10, 30, 50, 100, 500];
 $perPage = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 30;
@@ -68,11 +91,12 @@ $allMissingScores = empty($scores);
         <?php endforeach; ?>
     </select>
 </form>
+<?php echo $snippet; ?>
 <?php if ($allMissingScores): ?>
 <div class="alert">No spam scores were found in the database.</div>
 <?php endif; ?>
 <table class="table table-striped table-bordered">
-    <tr><th>Date</th><th>From</th><th>To</th><th>Subject</th><th>Message ID</th><th>Score</th></tr>
+    <tr><th>Date</th><th>From</th><th>To</th><th>Subject</th><th>Message ID</th><th>Score</th><th>Log</th></tr>
     <?php foreach ($scores as $s): ?>
         <tr>
             <td><?php echo htmlspecialchars($s['ts']); ?></td>
@@ -81,6 +105,7 @@ $allMissingScores = empty($scores);
             <td><?php echo htmlspecialchars($s['subject'] ?? ''); ?></td>
             <td><?php echo htmlspecialchars($s['message_id'] ?? ''); ?></td>
             <td><?php echo htmlspecialchars($s['score']); ?></td>
+            <td><a href="?snippet_mid=<?php echo urlencode($s['message_id']); ?>&page=<?php echo $page; ?>&per_page=<?php echo $perPage; ?>">View</a></td>
         </tr>
     <?php endforeach; ?>
 </table>

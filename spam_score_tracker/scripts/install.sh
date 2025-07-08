@@ -36,7 +36,23 @@ EOF
 fi
 
 # Create MySQL database, user, and table if they don't exist
-mysql -u root <<'EOF'
+MYSQL_CONF=/usr/local/directadmin/conf/mysql.conf
+if [ -r "$MYSQL_CONF" ]; then
+    DB_USER=$(grep -m1 '^user=' "$MYSQL_CONF" | cut -d= -f2)
+    DB_PASS=$(grep -m1 '^passwd=' "$MYSQL_CONF" | cut -d= -f2)
+    DB_HOST=$(grep -m1 '^host=' "$MYSQL_CONF" | cut -d= -f2)
+    DB_PORT=$(grep -m1 '^port=' "$MYSQL_CONF" | cut -d= -f2)
+    DB_SOCK=$(grep -m1 '^socket=' "$MYSQL_CONF" | cut -d= -f2)
+    MYSQL="mysql -u$DB_USER -p$DB_PASS"
+    [ -n "$DB_HOST" ] && MYSQL="$MYSQL -h $DB_HOST"
+    [ -n "$DB_SOCK" ] && MYSQL="$MYSQL --socket=$DB_SOCK"
+    if [ -n "$DB_PORT" ] && [ "$DB_PORT" != "0" ]; then
+        MYSQL="$MYSQL -P $DB_PORT"
+    fi
+else
+    MYSQL="mysql -u root"
+fi
+$MYSQL <<'EOF'
 CREATE DATABASE IF NOT EXISTS mail_logs CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 CREATE USER IF NOT EXISTS 'mail_logs'@'localhost' IDENTIFIED BY 'l59X8bHfO07FIBWY08Z98';
 GRANT ALL PRIVILEGES ON mail_logs.* TO 'mail_logs'@'localhost';
