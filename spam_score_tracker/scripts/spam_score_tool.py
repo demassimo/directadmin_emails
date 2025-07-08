@@ -205,7 +205,7 @@ def query(mid, time_str, tol_minutes=1):
             cnx.commit()
             cur.close(); cnx.close();
             return
-    print("⚠️  Not found within ±1 min in logs or DB.")
+    print("⚠️  Not found within +-1 min in logs or DB.")
     cur.close(); cnx.close()
 
 
