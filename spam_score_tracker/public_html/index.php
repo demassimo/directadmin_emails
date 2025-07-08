@@ -1,6 +1,5 @@
 <?php
-// SpamScoreTracker admin page
-// Only accessible to an administrator
+// SpamScoreTracker admin page using database
 $user = $_SERVER['REMOTE_USER']
     ?? $_SERVER['username']
     ?? $_SERVER['USER']
@@ -13,166 +12,34 @@ if ($user === '' || !in_array($user, $allowedAdmins, true)) {
     exit;
 }
 
-// Paths to log files containing Exim and SpamAssassin output. Add more
-// files to this array if your system logs to multiple locations.
-$logFiles = ['/var/log/exim/mainlog', '/var/log/mail.log'];
+$dsn = 'mysql:host=127.0.0.1;dbname=mail_logs;charset=utf8mb4';
+$dbu = 'mail_logs';
+$dbp = 'l59X8bHfO07FIBWY08Z98';
 
-// Where to store parsed data
-$logOutput = __DIR__ . '/../logs/scores.log';
-
-/**
- * Parse one or more log files and return an array of message data.
- * @param string|array $files Path or array of paths to log files
- */
-function parse_log($files) {
-    $files = (array)$files;
-    $msg = [];
-    $midMap = [];
-    $currentId = null;
-    $pendingSpamd = [];
-
-    foreach ($files as $file) {
-        if (!file_exists($file)) continue;
-        $fh = fopen($file, 'r');
-        if (!$fh) continue;
-        while (($line = fgets($fh)) !== false) {
-        // message received line
-        if (preg_match('/^(\S+\s+\S+)\s+(\S+)\s+<=\s+(\S+).*\[([^\]]+)\]/', $line, $m)) {
-            $id = $m[2];
-            $currentId = $id;
-            $msg[$id]['time'] = $m[1];
-            $msg[$id]['from'] = $m[3];
-            $msg[$id]['ip'] = $m[4];
-            if (preg_match('/T="([^"]*)"/', $line, $ms)) {
-                $msg[$id]['subject'] = $ms[1];
-            }
-            if (preg_match('/id=([^\s]+)/', $line, $mi)) {
-                $msg[$id]['msgid'] = $mi[1];
-                $midMap[$mi[1]] = $id;
-                if (isset($pendingSpamd[$mi[1]])) {
-                    foreach ($pendingSpamd[$mi[1]] as $sa) {
-                        $msg[$id]['time'] = $msg[$id]['time'] ?? $sa['time'];
-                        $msg[$id]['score'] = floatval($sa['score']);
-                        $msg[$id]['tests'] = $sa['tests'];
-                        $msg[$id]['spamline'] = $sa['line'];
-                    }
-                    unset($pendingSpamd[$mi[1]]);
-                }
-            }
-            if (preg_match('/S=(\d+)/', $line, $msz)) {
-                $msg[$id]['size'] = $msz[1];
-            }
-        }
-
-        // delivery lines
-        if (preg_match('/^(\S+\s+\S+)\s+(\S+)\s+=>\s+(\S+)/', $line, $m)) {
-            $id = $m[2];
-            $currentId = $id;
-            $msg[$id]['to'][] = $m[3];
-        }
-
-        // completed delivery line
-        if (preg_match('/^(\S+\s+\S+)\s+(\S+)\s+Completed/', $line, $m)) {
-            $id = $m[2];
-            $currentId = $id;
-            $msg[$id]['action'] = $msg[$id]['action'] ?? 'delivered';
-        }
-
-        // rejection line
-        if (preg_match('/^(\S+\s+\S+)\s+(\S+).*rejected/i', $line, $m)) {
-            $id = $m[2];
-            $currentId = $id;
-            $msg[$id]['action'] = 'rejected';
-        }
-
-        // spam score line - Exim "spamcheck" format
-        // Require the literal text "spamcheck" to avoid matching plain spamd logs
-        if (preg_match('/^(\S+\s+\S+)\s+(\S+)\s+.*spamcheck.*score=([\d\.\-]+)(?:.*tests=([A-Za-z0-9_,-]+))?/i', $line, $m)) {
-            $id = $m[2];
-            $currentId = $id;
-            $msg[$id]['time'] = $msg[$id]['time'] ?? $m[1];
-            $msg[$id]['score'] = floatval($m[3]);
-            if (!empty($m[4])) {
-                $msg[$id]['tests'] = $m[4];
-            }
-            $msg[$id]['spamline'] = trim($line);
-        }
-
-        // spamd result lines without Exim ID, match via the Message-ID
-        if (preg_match('/^(\w{3}\s+\d+\s+\d+:\d+:\d+).*spamd: result:.*?\s(-?[\d\.]+)\s-\s*([A-Za-z0-9_,-]+).*mid=<([^>]+)>/i', $line, $m)) {
-            $mid = $m[4];
-            if (isset($midMap[$mid])) {
-                $id = $midMap[$mid];
-                $msg[$id]['time'] = $msg[$id]['time'] ?? $m[1];
-                $msg[$id]['score'] = floatval($m[2]);
-                $msg[$id]['tests'] = $m[3];
-                $msg[$id]['spamline'] = trim($line);
-            } elseif ($currentId) {
-                $id = $currentId;
-                $msg[$id]['time'] = $msg[$id]['time'] ?? $m[1];
-                $msg[$id]['score'] = floatval($m[2]);
-                $msg[$id]['tests'] = $m[3];
-                $msg[$id]['spamline'] = trim($line);
-            } else {
-                $pendingSpamd[$mid][] = ['time' => $m[1], 'score' => $m[2], 'tests' => $m[3], 'line' => trim($line)];
-            }
-        } elseif (preg_match('/^(\w{3}\s+\d+\s+\d+:\d+:\d+).*spamd: result:.*?\s(-?[\d\.]+)\s-\s*([A-Za-z0-9_,-]+)/i', $line, $m) && $currentId) {
-            // spamd result line with no Message-ID, fall back to the last Exim ID
-            $id = $currentId;
-            $msg[$id]['time'] = $msg[$id]['time'] ?? $m[1];
-            $msg[$id]['score'] = floatval($m[2]);
-            $msg[$id]['tests'] = $m[3];
-            $msg[$id]['spamline'] = trim($line);
-        }
-        }
-        fclose($fh);
-    }
-    return $msg;
+// pagination parameters
+$allowedPerPage = [10, 30, 50, 100, 500];
+$perPage = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 30;
+if (!in_array($perPage, $allowedPerPage, true)) {
+    $perPage = 30;
 }
+$page = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
+$offset = ($page - 1) * $perPage;
 
-
-$scores = parse_log($logFiles);
-
-$allMissingScores = true;
-foreach ($scores as $info) {
-    if (isset($info['score'])) {
-        $allMissingScores = false;
-        break;
-    }
+try {
+    $pdo = new PDO($dsn, $dbu, $dbp);
+    $count = (int)$pdo->query('SELECT COUNT(*) FROM spam_scores')->fetchColumn();
+    $stmt = $pdo->prepare('SELECT ts,message_id,sender,recipients,subject,score '
+        .'FROM spam_scores ORDER BY ts DESC LIMIT :lim OFFSET :off');
+    $stmt->bindValue(':lim', $perPage, PDO::PARAM_INT);
+    $stmt->bindValue(':off', $offset, PDO::PARAM_INT);
+    $stmt->execute();
+    $scores = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    $scores = [];
+    $count = 0;
 }
-
-// Determine action for each message based on log lines
-foreach ($scores as $id => $info) {
-    if (!empty($info['action'])) continue;
-    $scores[$id]['action'] = 'delivered';
-}
-
-// Write the parsed data to a log file for later review
-if (!empty($scores)) {
-    if (!is_dir(dirname($logOutput))) {
-        mkdir(dirname($logOutput), 0755, true);
-    }
-    if ($fh = fopen($logOutput, 'a')) {
-        foreach ($scores as $id => $info) {
-            $to = isset($info['to']) ? implode(',', $info['to']) : '';
-            fputcsv($fh, [
-                $info['time'] ?? '',
-                $id,
-                $info['from'] ?? '',
-                $to,
-                $info['ip'] ?? '',
-                $info['score'] ?? '',
-                $info['tests'] ?? '',
-                $info['subject'] ?? '',
-                $info['msgid'] ?? '',
-                $info['size'] ?? '',
-                $info['spamline'] ?? '',
-                $info['action'] ?? ''
-            ]);
-        }
-        fclose($fh);
-    }
-}
+$totalPages = $perPage ? (int)ceil($count / $perPage) : 1;
+$allMissingScores = empty($scores);
 ?>
 <!DOCTYPE html>
 <html>
@@ -180,70 +47,55 @@ if (!empty($scores)) {
     <meta charset="utf-8" />
     <title>Spam Score Tracker</title>
     <style>
-        /* Basic styling to mimic Evolution tables */
         body { margin: 20px; font-family: Arial, sans-serif; background: #f5f5f5; }
-        .panel {
-            max-width: 1200px;
-            margin: 0 auto;
-            background: #fff;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        table {
-            width: 100%;
-            border-collapse: separate;
-            border-spacing: 0;
-            border-radius: 6px;
-            overflow: hidden;
-        }
+        .panel { max-width: 800px; margin: 0 auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        table { width: 100%; border-collapse: separate; border-spacing: 0; border-radius: 6px; overflow: hidden; }
         th, td { padding: 8px 10px; border: 1px solid #ddd; }
         th { background: #f7f7f7; }
         tr:nth-child(even) { background: #fafafa; }
-        tr:hover { background: #f0f0f0; }
-        .na {
-            color: #777;
-            font-style: italic;
-            opacity: 0.8;
-        }
-        .na:hover { text-decoration: underline; cursor: help; }
-        .alert {
-            background: #fff3cd;
-            color: #856404;
-            border: 1px solid #ffeeba;
-            padding: 10px;
-            border-radius: 4px;
-            margin-bottom: 15px;
-        }
+        .alert { background: #fff3cd; color: #856404; border: 1px solid #ffeeba; padding: 10px; border-radius: 4px; margin-bottom: 10px; }
+        .pagination a { margin: 0 3px; text-decoration: none; }
     </style>
 </head>
 <body>
 <div class="panel">
 <h1>SpamAssassin Score History</h1>
+<form method="get" style="margin-bottom:10px">
+    <label for="per_page">Results per page:</label>
+    <select id="per_page" name="per_page" onchange="this.form.submit()">
+        <?php foreach ($allowedPerPage as $n): ?>
+        <option value="<?php echo $n; ?>"<?php if ($perPage==$n) echo ' selected'; ?>><?php echo $n; ?></option>
+        <?php endforeach; ?>
+    </select>
+</form>
 <?php if ($allMissingScores): ?>
-<div class="alert">No spam scores were parsed from the log file. SpamAssassin may not be logging results.</div>
+<div class="alert">No spam scores were found in the database.</div>
 <?php endif; ?>
-<p>Rows showing <span class="na" title="No score logged">No score</span> had no SpamAssassin result in the log.</p>
-
 <table class="table table-striped table-bordered">
-    <tr><th>Date</th><th>ID</th><th>From</th><th>To</th><th>IP</th><th>Score</th><th>Tests</th><th>Subject</th><th>Message ID</th><th>Size</th><th>Spam Log</th><th>Action</th></tr>
-    <?php foreach ($scores as $id => $s): ?>
+    <tr><th>Date</th><th>From</th><th>To</th><th>Subject</th><th>Message ID</th><th>Score</th></tr>
+    <?php foreach ($scores as $s): ?>
         <tr>
-            <td><?php echo htmlspecialchars($s['time'] ?? ''); ?></td>
-            <td><?php echo htmlspecialchars($id); ?></td>
-            <td><?php echo htmlspecialchars($s['from'] ?? ''); ?></td>
-            <td><?php echo htmlspecialchars(isset($s['to']) ? implode(',', $s['to']) : ''); ?></td>
-            <td><?php echo htmlspecialchars($s['ip'] ?? ''); ?></td>
-            <td><?php echo isset($s['score']) ? htmlspecialchars($s['score']) : '<span class="na" title="No score logged">No score</span>'; ?></td>
-            <td><?php echo htmlspecialchars($s['tests'] ?? ''); ?></td>
+            <td><?php echo htmlspecialchars($s['ts']); ?></td>
+            <td><?php echo htmlspecialchars($s['sender'] ?? ''); ?></td>
+            <td><?php echo htmlspecialchars($s['recipients'] ?? ''); ?></td>
             <td><?php echo htmlspecialchars($s['subject'] ?? ''); ?></td>
-            <td><?php echo htmlspecialchars($s['msgid'] ?? ''); ?></td>
-            <td><?php echo htmlspecialchars($s['size'] ?? ''); ?></td>
-            <td><?php echo htmlspecialchars($s['spamline'] ?? ''); ?></td>
-            <td><?php echo htmlspecialchars($s['action'] ?? ''); ?></td>
+            <td><?php echo htmlspecialchars($s['message_id'] ?? ''); ?></td>
+            <td><?php echo htmlspecialchars($s['score']); ?></td>
         </tr>
     <?php endforeach; ?>
 </table>
+<?php if ($totalPages > 1): ?>
+<div class="pagination" style="margin-top:10px; text-align:center;">
+    <?php for ($i = 1; $i <= $totalPages; $i++): ?>
+        <?php if ($i == $page): ?>
+            <strong><?php echo $i; ?></strong>
+        <?php else: ?>
+            <a href="?page=<?php echo $i; ?>&per_page=<?php echo $perPage; ?>"><?php echo $i; ?></a>
+        <?php endif; ?>
+        <?php if ($i < $totalPages) echo ' '; ?>
+    <?php endfor; ?>
+</div>
+<?php endif; ?>
 </div>
 </body>
 </html>
