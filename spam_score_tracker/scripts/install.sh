@@ -37,7 +37,7 @@ fi
 
 # Create MySQL database, user, and table if they don't exist
 mysql -u root <<'EOF'
-CREATE DATABASE IF NOT EXISTS mail_logs;
+CREATE DATABASE IF NOT EXISTS mail_logs CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 CREATE USER IF NOT EXISTS 'mail_logs'@'localhost' IDENTIFIED BY 'l59X8bHfO07FIBWY08Z98';
 GRANT ALL PRIVILEGES ON mail_logs.* TO 'mail_logs'@'localhost';
 FLUSH PRIVILEGES;
@@ -52,7 +52,8 @@ CREATE TABLE IF NOT EXISTS spam_scores (
     subject TEXT,
     KEY(message_id),
     KEY(ts)
-);
+) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+ALTER TABLE spam_scores CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ALTER TABLE spam_scores ADD COLUMN IF NOT EXISTS sender VARCHAR(255);
 ALTER TABLE spam_scores ADD COLUMN IF NOT EXISTS recipients TEXT;
 ALTER TABLE spam_scores ADD COLUMN IF NOT EXISTS subject TEXT;
