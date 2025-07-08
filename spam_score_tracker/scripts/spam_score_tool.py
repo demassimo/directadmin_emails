@@ -10,16 +10,17 @@ import sys
 from datetime import datetime, timedelta
 import mysql.connector
 
-# —— CONFIGURE ME —————————————————————————————————————————————————————
+# -- CONFIGURE ME ------------------------------------------------------------
 DB_CONFIG = {
     'host':     '127.0.0.1',
     'user':     'mail_logs',
     'password': 'l59X8bHfO07FIBWY08Z98',
     'database': 'mail_logs',
+    'charset':  'utf8mb4',
 }
 LOG_FILES = ["/var/log/exim/mainlog", "/var/log/mail.log"]
 TIMEZONE = None  # if you need to localize; otherwise leave None
-# ———————————————————————————————————————————————————————————————————————
+# ------------------------------------------------------------------------------
 
 # regexes converted from the PHP parser
 RECEIVED_RE    = re.compile(r'^(?P<ts>\S+\s+\S+)\s+(?P<id>\S+)\s+<=\s+(?P<from>\S+).*\[(?P<ip>[^\]]+)\]')
@@ -58,7 +59,7 @@ def parse_ts(ts_str, year=None):
         try:
             dt = datetime.strptime(ts_str, fmt)
             if fmt == "%b %d %H:%M:%S":
-                # Exim logs don’t include year
+                # Exim logs don't include year
                 dt = dt.replace(year=year or datetime.now().year)
             return dt
         except ValueError:
@@ -88,7 +89,7 @@ def parse_logs(files):
         try:
             with opener(fn, 'rt', errors='ignore') as f:
                 for line in f:
-                    # — RECEIVED
+                    # -- RECEIVED
                     m = RECEIVED_RE.search(line)
                     if m:
                         id_ = m.group('id')
@@ -119,7 +120,7 @@ def parse_logs(files):
                             msg['size'] = sz.group(1)
                         continue
 
-                    # — RCPT
+                    # -- RCPT
                     m = RCPT_RE.search(line)
                     if m:
                         id_ = m.group('id')
@@ -128,7 +129,7 @@ def parse_logs(files):
                         msg.setdefault('to', []).append(m.group('to'))
                         continue
 
-                    # — COMPLETED
+                    # -- COMPLETED
                     m = COMPL_RE.search(line)
                     if m:
                         id_ = m.group('id')
@@ -137,7 +138,7 @@ def parse_logs(files):
                         msg.setdefault('action', 'delivered')
                         continue
 
-                    # — REJECTED
+                    # -- REJECTED
                     m = REJ_RE.search(line)
                     if m:
                         id_ = m.group('id')
@@ -146,7 +147,7 @@ def parse_logs(files):
                         msg['action'] = 'rejected'
                         continue
 
-                    # — SPAMCHECK
+                    # -- SPAMCHECK
                     m = SPAMCHECK_RE.search(line)
                     if m:
                         id_     = m.group('id')
@@ -162,7 +163,7 @@ def parse_logs(files):
                         msg['spamline'] = line.strip()
                         continue
 
-                    # — SPAMD with explicit mid
+                    # -- SPAMD with explicit mid
                     m = SPAMD_MID_RE.search(line)
                     if m:
                         mid    = m.group(4)
@@ -188,7 +189,7 @@ def parse_logs(files):
                             pending.setdefault(mid, []).append(info)
                         continue
 
-                    # — fallback SPAMD
+                    # -- fallback SPAMD
                     m = SPAMD_RE.search(line)
                     if m and current_id:
                         id_ = current_id
@@ -252,7 +253,7 @@ def query(mid, time_str, tol_minutes=1):
         except ValueError:
             dt = None
     if not dt:
-        raise SystemExit("❌ time format must be e.g. 2025/0708 10:56 or 2025/07/08 10:56")
+        raise SystemExit("ERROR: time format must be e.g. 2025/0708 10:56 or 2025/07/08 10:56")
 
     cnx = connect_db()
     cur = cnx.cursor()
@@ -263,13 +264,13 @@ def query(mid, time_str, tol_minutes=1):
     )
     row = cur.fetchone()
     if row:
-        print(f"✅ Found in DB: {row[0]} → score={row[1]:.2f}")
+        print(f"Found in DB: {row[0]} -> score={row[1]:.2f}")
         cur.close(); cnx.close()
         return
 
     for entry in generate_entries():
         if entry['message_id'] == mid and abs((entry['ts'] - dt).total_seconds()) <= tol_minutes * 60:
-            print(f"🔍 Found in logs: {entry['ts']} → score={entry['score']:.2f}; inserting into DB")
+            print(f"Found in logs: {entry['ts']} -> score={entry['score']:.2f}; inserting into DB")
             cur.execute(
                 "INSERT INTO spam_scores (ts, score, message_id, sender, recipients, subject)"
                 " VALUES (%s,%s,%s,%s,%s,%s)",
@@ -280,7 +281,7 @@ def query(mid, time_str, tol_minutes=1):
             cur.close(); cnx.close()
             return
 
-    print("⚠️  Not found within +-1 min in logs or DB.")
+    print("WARNING: Not found within +-1 min in logs or DB.")
     cur.close(); cnx.close()
 
 
